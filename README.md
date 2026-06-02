@@ -268,7 +268,12 @@ class CustomWrapper(Galerna):
 
 `build_case(case_context)` runs after the case directory is created and before templates are rendered.
 
-## Broadcasting
+## Variable Parameters from Files and Broadcasting
+
+- File-backed parameters: instead of embedding long lists in `galerna.yaml`, you can load simple CSV/TSV files. Two supported syntaxes:
+  - Short string: `station: "file:./stations.csv"`
+  - Dict form: `station: {file: "./stations.tsv", format: "tsv", column: "id"}`
+  Currently only CSV/TSV is supported and these are read using Python's stdlib `csv` module (no extra packages required).
 
 - Scalar broadcasting: Galerna supports broadcasting scalars to vectors:
   - `one_by_one` mode: scalars or single-element sequences are repeated to match the longest variable vector. Example: `{"l": [1,2,3], "scalar": 10}` → cases `(1,10),(2,10),(3,10)`.

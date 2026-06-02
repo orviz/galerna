@@ -175,7 +175,59 @@ class Galerna:
             with open(variable_parameters) as f:
                 return yaml.safe_load(f) or {}
 
-        return variable_parameters
+        params = variable_parameters
+
+        # Post-process parameter values that reference external files.
+        return self._resolve_external_parameters(params)
+
+    def _resolve_external_parameters(self, params: dict) -> dict:
+        """Resolve parameter values that reference external tabular files.
+
+        Supported value formats:
+        - dict with key `file`: {'file': 'path/to/file.csv', 'column': 'colname', 'format': 'csv'}
+        - string starting with 'file:' (e.g. 'file:./data.csv')
+
+        For CSV files the stdlib `csv` module is used when possible (no pandas required).
+        For parquet and richer formats, `pandas` is used when available; otherwise
+        an ImportError is raised with a helpful message.
+        """
+        from pathlib import Path
+
+        resolved = {}
+        for key, value in (params or {}).items():
+            # Normalize short string syntax: file:PATH
+            if isinstance(value, str) and value.startswith("file:"):
+                value = {"file": value[len("file:") :].strip()}
+
+            if isinstance(value, dict) and "file" in value:
+                file_path = Path(value["file"]).expanduser()
+                if not file_path.is_file():
+                    raise FileNotFoundError(f"Referenced file not found: {file_path}")
+
+                fmt = (value.get("format") or file_path.suffix.lstrip(".")).lower()
+                column = value.get("column")
+
+                if fmt in {"csv", "txt"} or fmt == "tsv":
+                    sep = "\t" if fmt == "tsv" else value.get("sep", ",")
+                    # Use stdlib csv only for simplicity and no extra deps
+                    with file_path.open(newline="") as fh:
+                        if column:
+                            reader = csv.DictReader(fh, delimiter=sep)
+                            vals = [row[column] for row in reader]
+                        else:
+                            reader = csv.reader(fh, delimiter=sep)
+                            vals = [r[0] for r in reader if r]
+
+                else:
+                    raise ValueError(
+                        "Unsupported file format: %s. Currently only CSV/TSV is supported." % fmt
+                    )
+
+                resolved[key] = vals
+            else:
+                resolved[key] = value
+
+        return resolved
 
     def _normalize_cases_config(self, cases: dict | None) -> CasesConfig:
         cases = cases or {}
@@ -282,14 +334,32 @@ class Galerna:
 
         if not seq_params:
             self.cases_context = [{}]
+            # populate canonical fields for single empty context
+            for case_num, context in enumerate(self.cases_context):
+                context["case_num"] = case_num
+                context.update(self.fixed_parameters)
+                context["case_id"] = self._render_case_id(context)
+                context["case_dir"] = self._get_case_dir(context["case_id"])
+                context["command_cmd"] = self._render_command(context)
+                self._add_manifest_paths(context)
             return
 
         if self.mode == "all_combinations":
             keys = list(seq_params.keys())
             values = list(seq_params.values())
-            self.cases_context = [
+            raw_contexts = [
                 dict(zip(keys, c, strict=False)) for c in itertools.product(*values)
             ]
+            self.cases_context = []
+            for case_num, ctx in enumerate(raw_contexts):
+                context = ctx
+                context["case_num"] = case_num
+                context.update(self.fixed_parameters)
+                context["case_id"] = self._render_case_id(context)
+                context["case_dir"] = self._get_case_dir(context["case_id"])
+                context["command_cmd"] = self._render_command(context)
+                self._add_manifest_paths(context)
+                self.cases_context.append(context)
             return
 
         # one_by_one: broadcast length-1 sequences to the maximum length

@@ -144,6 +144,14 @@ Commands in shared layout should write unique output names, usually using `{{cas
 
 Additional features for users:
 
+- File-backed `variable_parameters`: load simple CSV/TSV values instead of writing long lists directly in the YAML. Use `file:` short syntax or dict form with `file`, `format`, and optional `column` to select a column from a headered TSV file. Example:
+
+  ```yaml
+  variable_parameters:
+    station: "file:./stations.csv"
+    station2: {file: "./stations.tsv", format: "tsv", column: "id"}
+  ```
+
 - Scalar broadcasting:
   - In `one_by_one` mode, scalars (or length-1 sequences) are repeated to match the longest vector.
   - In `all_combinations` mode, scalars are treated as single-element lists and combine with other vectors in the Cartesian product.

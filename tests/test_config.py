@@ -115,3 +115,63 @@ def test_all_combinations_with_scalar(tmp_path):
     pairs = {(c["station"], c["scalar"]) for c in wrapper.cases_context}
     assert pairs == {(1, 10), (2, 10)}
     assert [c["command_cmd"] for c in wrapper.cases_context] == ["echo 1 10", "echo 2 10"]
+
+
+def test_variable_parameters_from_csv_file_string_syntax(tmp_path):
+    """Support loading a simple CSV via the 'file:' shorthand string."""
+    csv_path = tmp_path / "stations.csv"
+    csv_path.write_text("1\n2\n3\n")
+
+    params = {
+        "templates_dir": None,
+        "output_dir": str(tmp_path / "runs"),
+        "variable_parameters": {"station": f"file:{csv_path}"},
+        "mode": "one_by_one",
+        "command": "echo {{station}}",
+    }
+
+    g = Galerna(**params)
+    assert len(g.cases_context) == 3
+    assert [c["station"] for c in g.cases_context] == ["1", "2", "3"]
+
+
+def test_variable_parameters_from_tsv_file_dict_syntax(tmp_path):
+    """Support loading a TSV with a header via dict syntax and column selection."""
+    tsv_path = tmp_path / "stations.tsv"
+    tsv_path.write_text("id\tname\n10\tA\n20\tB\n")
+
+    params = {
+        "templates_dir": None,
+        "output_dir": str(tmp_path / "runs"),
+        "variable_parameters": {
+            "station": {"file": str(tsv_path), "format": "tsv", "column": "id"}
+        },
+        "mode": "one_by_one",
+        "command": "echo {{station}}",
+    }
+
+    g = Galerna(**params)
+    assert len(g.cases_context) == 2
+    assert [c["station"] for c in g.cases_context] == ["10", "20"]
+
+
+def test_example_dict_file_syntax(tmp_path):
+    """Exercise the example `galerna_tsv.yaml` using dict file syntax.
+
+    Copy the example directory to a temporary location and point the
+    `file` path to the copied TSV so resolution is unambiguous.
+    """
+    import shutil
+
+    src = Path("examples/directories/06_file_parameters")
+    dst = tmp_path / "example"
+    shutil.copytree(src, dst)
+
+    example_path = dst / "galerna_tsv.yaml"
+    params = _params_for_example(example_path, tmp_path)
+
+    # Ensure file path is absolute so Galerna can find it regardless of cwd
+    params["variable_parameters"]["station"]["file"] = str(dst / "stations.tsv")
+
+    g = Galerna(**params)
+    assert [c["station"] for c in g.cases_context] == ["10", "20"]
