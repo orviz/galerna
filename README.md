@@ -268,6 +268,22 @@ class CustomWrapper(Galerna):
 
 `build_case(case_context)` runs after the case directory is created and before templates are rendered.
 
+## Postprocessing
+
+You can extend Galerna with a postprocessing step that runs after cases are ready.
+
+- Subclass hook: override `postprocess_case(self, context: dict)` in a custom wrapper to implement in-process postprocessing with full access to Galerna internals.
+- Configured script: alternatively, add a `postprocess` section to `galerna.yaml` to run a Python script in-process. Example:
+
+```yaml
+postprocess:
+  script: ./scripts/postprocess_case.py   # path to a .py script or module:function
+  function: process_case                 # function name inside the script (default: process_case)
+  mode: inprocess                        # currently only 'inprocess' is supported
+```
+
+When a `script` is configured, Galerna will import the script and call the configured function for each selected case. The runner first tries `func(context, galerna)` and falls back to `func(context)` if the two-argument signature is not present. Use the CLI command `galerna postprocess --cases 0-3` to run postprocessing for selected cases.
+
 ## Examples
 
 The `examples/` folder contains executable learning paths:

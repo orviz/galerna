@@ -80,6 +80,7 @@ class Galerna:
         log_file: str | None = None,
         log_console: bool | None = None,
         command: str | None = None,
+        postprocess: dict | None = None,
     ) -> None:
         if log_console is None:
             log_console = log_file is None
@@ -105,6 +106,7 @@ class Galerna:
         self.cases_config = self._normalize_cases_config(cases)
         self.run_config = self._normalize_run_config(run)
         self.status_config = self._normalize_status_config(status)
+        self.postprocess_config = self._normalize_postprocess_config(postprocess)
 
         self._validate_config()
         self._env = self._create_template_env()
@@ -209,6 +211,17 @@ class Galerna:
     def _normalize_status_config(self, status: dict | None) -> StatusConfig:
         status = status or {}
         return StatusConfig(mode=status.get("mode", "auto"))
+
+    def _normalize_postprocess_config(self, postprocess: dict | None) -> dict:
+        postprocess = postprocess or {}
+        # Expected keys: script (path or module:function), function (optional), mode ('inprocess'|'subprocess')
+        return {
+            "script": postprocess.get("script"),
+            "function": postprocess.get("function", "process_case"),
+            "mode": postprocess.get("mode", "inprocess"),
+            "timeout": postprocess.get("timeout", None),
+            "pass_case_as": postprocess.get("pass_case_as", "args"),
+        }
 
     def _validate_config(self) -> None:
         if self.cases_config.layout not in {"directories", "shared"}:
@@ -401,8 +414,85 @@ class Galerna:
             return context["case_id"]
         return context["status_group"]
 
+    def postprocess_cases(self, cases: list[int] | None = None) -> int:
+        """Run postprocessing for selected cases.
+
+        If `postprocess` is not configured, calls the `postprocess_case` hook
+        on each selected context. If `postprocess.script` is configured and
+        `mode` is `inprocess`, imports and calls the configured function with
+        signature `func(context, galerna)` if available, otherwise `func(context)`.
+        Returns the number of successfully postprocessed cases.
+        """
+        contexts = self._select_contexts(cases)
+        success = 0
+
+        script = self.postprocess_config.get("script")
+        mode = self.postprocess_config.get("mode")
+        func_name = self.postprocess_config.get("function")
+
+        # No external script configured: call hook for each case
+        if not script:
+            for context in contexts:
+                try:
+                    self.postprocess_case(context)
+                    success += 1
+                except Exception:
+                    self.logger.exception("postprocess_case failed for %s", context.get("case_id"))
+            return success
+
+        # Only support inprocess mode for now
+        if mode != "inprocess":
+            raise NotImplementedError("Only inprocess postprocessing is supported currently")
+
+        # Load the script as a module and get the function
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        func = None
+        try:
+            if ":" in script:
+                # module:function syntax
+                module_path, fn = script.split(":", 1)
+                module = importlib.import_module(module_path)
+                func = getattr(module, fn)
+            else:
+                script_path = Path(script)
+                if not script_path.exists():
+                    raise FileNotFoundError(f"postprocess script not found: {script}")
+                spec = importlib.util.spec_from_file_location("galerna_postprocess", str(script_path))
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["galerna_postprocess"] = module
+                assert spec and spec.loader
+                spec.loader.exec_module(module)
+                func = getattr(module, func_name)
+        except Exception:
+            self.logger.exception("Failed to load postprocess script %s", script)
+            raise
+
+        for context in contexts:
+            try:
+                # Prefer (context, self) signature
+                try:
+                    func(context, self)
+                except TypeError:
+                    func(context)
+                success += 1
+            except Exception:
+                self.logger.exception("Postprocess function failed for %s", context.get("case_id"))
+
+        return success
+
     def build_case(self, case_context: dict) -> None:
         """Hook for subclasses to add custom case build logic."""
+
+    def postprocess_case(self, case_context: dict) -> None:
+        """Hook for subclasses to implement per-case postprocessing.
+
+        By default this is a no-op. Subclasses may override this to perform
+        arbitrary in-process postprocessing steps.
+        """
+        return
 
     def get_context(self) -> list[dict] | Any:
         try:

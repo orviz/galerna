@@ -141,3 +141,16 @@ Commands in shared layout should write unique output names, usually using `{{cas
 ## Advanced
 
 `advanced/custom_build_hook` shows how to subclass `Galerna` and add custom logic in `build_case`.
+
+Postprocessing
+
+Galena supports a postprocessing runner. You can either override `postprocess_case()` in a custom wrapper or configure a script in `galerna.yaml`:
+
+```yaml
+postprocess:
+  script: ./scripts/postprocess_case.py
+  function: process_case
+  mode: inprocess
+```
+
+Use `galerna postprocess --cases 0-3` to run postprocessing for selected cases.
