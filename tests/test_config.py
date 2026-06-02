@@ -68,3 +68,50 @@ def test_one_by_one_station_compiler(tmp_path):
     pairs = [(c["station"], c["compiler"]) for c in wrapper.cases_context]
     assert pairs == [(1, "gcc"), (2, "intel")]
     assert all(c["command_cmd"] == "python run_case.py" for c in wrapper.cases_context)
+
+
+def test_one_by_one_scalar_broadcast(tmp_path):
+    """Scalars should be broadcast to match vector lengths in one_by_one mode."""
+    example_path = Path("examples/directories/01_local_with_templates/galerna.yaml")
+    params = _params_for_example(example_path, tmp_path)
+
+    # Override variable_parameters with a vector + scalar
+    params["variable_parameters"] = {"l": [1, 2, 3], "scalar": 10}
+    params["mode"] = "one_by_one"
+    params["command"] = "echo {{l}} {{scalar}}"
+
+    wrapper = Galerna(**params)
+
+    assert wrapper.mode == "one_by_one"
+    assert len(wrapper.cases_context) == 3
+
+    ls = [c["l"] for c in wrapper.cases_context]
+    esc = [c["scalar"] for c in wrapper.cases_context]
+    assert ls == [1, 2, 3]
+    assert esc == [10, 10, 10]
+
+    assert [c["command_cmd"] for c in wrapper.cases_context] == [
+        "echo 1 10",
+        "echo 2 10",
+        "echo 3 10",
+    ]
+
+
+def test_all_combinations_with_scalar(tmp_path):
+    """Scalars in all_combinations should be treated as single-element lists."""
+    example_path = Path("examples/directories/01_local_with_templates/galerna.yaml")
+    params = _params_for_example(example_path, tmp_path)
+
+    # station is a list, scalar should be treated as [10]
+    params["variable_parameters"] = {"station": [1, 2], "scalar": 10}
+    params["mode"] = "all_combinations"
+    params["command"] = "echo {{station}} {{scalar}}"
+
+    wrapper = Galerna(**params)
+
+    assert wrapper.mode == "all_combinations"
+    assert len(wrapper.cases_context) == 2
+
+    pairs = {(c["station"], c["scalar"]) for c in wrapper.cases_context}
+    assert pairs == {(1, 10), (2, 10)}
+    assert [c["command_cmd"] for c in wrapper.cases_context] == ["echo 1 10", "echo 2 10"]

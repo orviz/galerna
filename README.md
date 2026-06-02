@@ -268,6 +268,12 @@ class CustomWrapper(Galerna):
 
 `build_case(case_context)` runs after the case directory is created and before templates are rendered.
 
+## Broadcasting
+
+- Scalar broadcasting: Galerna supports broadcasting scalars to vectors:
+  - `one_by_one` mode: scalars or single-element sequences are repeated to match the longest variable vector. Example: `{"l": [1,2,3], "scalar": 10}` → cases `(1,10),(2,10),(3,10)`.
+  - `all_combinations` mode: scalars are treated as single-element lists and participate in the Cartesian product.
+
 ## Examples
 
 The `examples/` folder contains executable learning paths:

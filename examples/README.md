@@ -141,3 +141,9 @@ Commands in shared layout should write unique output names, usually using `{{cas
 ## Advanced
 
 `advanced/custom_build_hook` shows how to subclass `Galerna` and add custom logic in `build_case`.
+
+Additional features for users:
+
+- Scalar broadcasting:
+  - In `one_by_one` mode, scalars (or length-1 sequences) are repeated to match the longest vector.
+  - In `all_combinations` mode, scalars are treated as single-element lists and combine with other vectors in the Cartesian product.

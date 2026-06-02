@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -273,26 +273,44 @@ class Galerna:
         return env
 
     def _generate_cases_context(self) -> None:
-        variable_parameters = {
+        raw_params = {
             key: self._expand_parameter_value(value)
             for key, value in self.variable_parameters.items()
         }
 
-        if not variable_parameters:
+        seq_params = self._normalize_variable_parameters_to_sequences(raw_params)
+
+        if not seq_params:
             self.cases_context = [{}]
-        elif self.mode == "all_combinations":
-            keys = variable_parameters.keys()
-            values = variable_parameters.values()
+            return
+
+        if self.mode == "all_combinations":
+            keys = list(seq_params.keys())
+            values = list(seq_params.values())
             self.cases_context = [
                 dict(zip(keys, c, strict=False)) for c in itertools.product(*values)
             ]
-        else:
-            num_cases = len(next(iter(variable_parameters.values())))
-            self._validate_one_by_one_lengths(variable_parameters, num_cases)
-            self.cases_context = [
-                {key: values[i] for key, values in variable_parameters.items()}
-                for i in range(num_cases)
-            ]
+            return
+
+        # one_by_one: broadcast length-1 sequences to the maximum length
+        max_len = max(len(v) for v in seq_params.values())
+        broadcasted: dict[str, list] = {}
+        for key, seq in seq_params.items():
+            if len(seq) == max_len:
+                broadcasted[key] = seq
+            elif len(seq) == 1:
+                broadcasted[key] = seq * max_len
+            else:
+                raise ValueError(
+                    "All variable_parameters must have the same length in "
+                    f"one_by_one mode. '{key}' has length {len(seq)}, expected {max_len}."
+                )
+
+        num_cases = max_len
+        self._validate_one_by_one_lengths(broadcasted, num_cases)
+        self.cases_context = [
+            {key: values[i] for key, values in broadcasted.items()} for i in range(num_cases)
+        ]
 
         for case_num, context in enumerate(self.cases_context):
             context["case_num"] = case_num
@@ -306,6 +324,26 @@ class Galerna:
         if isinstance(value, str) and value.strip().startswith("range("):
             return self._parse_range(value)
         return value
+
+    def _is_sequence_value(self, value: Any) -> bool:
+        """Return True if value is a non-string sequence."""
+        return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+    def _normalize_variable_parameters_to_sequences(
+        self, variable_parameters: dict[str, Any]
+    ) -> dict[str, list]:
+        """Normalize variable_parameters so every value is a list/sequence.
+
+        This expands range expressions and converts scalars into single-element lists.
+        """
+        seqs: dict[str, list] = {}
+        for key, value in variable_parameters.items():
+            v = value
+            if self._is_sequence_value(v):
+                seqs[key] = list(v)
+            else:
+                seqs[key] = [v]
+        return seqs
 
     def _parse_range(self, value: str) -> list[int]:
         match = re.fullmatch(
