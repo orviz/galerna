@@ -442,13 +442,28 @@ class Galerna:
     def build_case(self, case_context: dict) -> None:
         """Hook for subclasses to add custom case build logic."""
 
-    def get_context(self) -> list[dict] | Any:
+    def get_context(self) -> list[dict]:
+        """Return the canonical cases context as a list of dicts.
+
+        This method always returns the in-memory canonical representation
+        (list[dict]) and does not depend on pandas being installed.
+        Use `cases_df()` to obtain a pandas DataFrame view when needed.
+        """
+        return self.cases_context
+
+    def cases_df(self) -> Any:
+        """Return the cases context as a pandas DataFrame.
+
+        Raises ImportError with a helpful message if pandas is not installed.
+        """
         try:
             import pandas as pd
 
             return pd.DataFrame(self.cases_context)
-        except ImportError:
-            return self.cases_context
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise ImportError(
+                "`cases_df()` requires pandas. Install it with: pip install pandas"
+            ) from exc
 
     def build_cases(self, cases: list[int] | None = None) -> int:
         contexts_to_build = self._select_contexts(cases)
