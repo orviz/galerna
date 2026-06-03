@@ -1145,7 +1145,12 @@ def run_bulk(case_ids, done_file, threads):
         return statuses
 
     def postprocess_case(self, case_context: dict, **kwargs) -> None:
-        raise NotImplementedError("The method postprocess_case must be implemented.")
+        """Hook for subclasses to implement per-case postprocessing.
+
+        By default this is a no-op. Subclasses may override this to perform
+        arbitrary in-process postprocessing steps.
+        """
+        return None
 
     def postprocess_cases(
         self,
@@ -1154,14 +1159,62 @@ def run_bulk(case_ids, done_file, threads):
         overwrite: bool = False,
         **kwargs,
     ) -> list[Any]:
-        contexts_to_process = self._select_contexts(cases)
-        results = []
-        for context in contexts_to_process:
-            result = self.postprocess_case(
-                context,
-                overwrite=overwrite,
-                clean_after=clean_after,
-                **kwargs,
-            )
-            results.append(result)
+        contexts = self._select_contexts(cases)
+        results: list[Any] = []
+
+        script = self.postprocess_config.get("script")
+        mode = self.postprocess_config.get("mode")
+        func_name = self.postprocess_config.get("function")
+
+        if not script:
+            # No external script configured: call hook for each case
+            for context in contexts:
+                try:
+                    res = self.postprocess_case(
+                        context, overwrite=overwrite, clean_after=clean_after, **kwargs
+                    )
+                    results.append(res)
+                except Exception:
+                    self.logger.exception("postprocess_case failed for %s", context.get("case_id"))
+            return results
+
+        if mode != "inprocess":
+            raise NotImplementedError("Only inprocess postprocessing is supported currently")
+
+        # Load script/module and get callable
+        import importlib
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        func = None
+        try:
+            if ":" in script:
+                module_path, fn = script.split(":", 1)
+                module = importlib.import_module(module_path)
+                func = getattr(module, fn)
+            else:
+                script_path = Path(script)
+                if not script_path.exists():
+                    raise FileNotFoundError(f"postprocess script not found: {script}")
+                spec = importlib.util.spec_from_file_location("galerna_postprocess", str(script_path))
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["galerna_postprocess"] = module
+                assert spec and spec.loader
+                spec.loader.exec_module(module)  # type: ignore
+                func = getattr(module, func_name)
+        except Exception:
+            self.logger.exception("Failed to load postprocess script %s", script)
+            raise
+
+        for context in contexts:
+            try:
+                try:
+                    res = func(context, self)
+                except TypeError:
+                    res = func(context)
+                results.append(res)
+            except Exception:
+                self.logger.exception("Postprocess function failed for %s", context.get("case_id"))
+
         return results

@@ -1,0 +1,13 @@
+output_dir: runs
+templates_dir: null
+mode: one_by_one
+
+variable_parameters:
+  x: [1, 2]
+
+command: "echo {{x}}"
+
+postprocess:
+  script: postprocess.py
+  function: process_case
+  mode: inprocess

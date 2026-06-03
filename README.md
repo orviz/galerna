@@ -9,8 +9,15 @@ galerna build
 galerna run
 galerna status
 ```
+and optionally:
+```bash
+galerna postprocess
+```
 
-`build` creates the case manifest and any case inputs. `run` executes the selected cases. `status` reads Galerna's status files and reports which cases are built, running, done, failed, or in a user-defined state.
+where:
+1. `build` creates the case manifest and any case inputs.
+2. `run` executes the selected cases.
+3. `status` reads Galerna's status files and reports which cases are built, running, done, failed, or in a user-defined state.
 
 ## Acknowledgments
 
@@ -302,6 +309,8 @@ galerna build
 galerna run
 galerna status
 ```
+
+An example showcasing the optional [postprocessing step is also avaiable](./examples/advanced/postprocess_simple/).
 
 See [examples/README.md](examples/README.md) for the full list.
 
